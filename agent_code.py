@@ -1,15 +1,15 @@
-
 import os
-from typing import Dict, Any
+import streamlit as st
 
-def build_context(selected_name: str, user_question: str, metrics: Dict[str, Any]) -> str:
-    """Build a compact textual context for the LLM from pre-computed metrics."""
+# -------- Build Context (unchanged) -------- #
+
+def build_context(selected_name: str, user_question: str, metrics):
     rest = metrics["restaurants"].loc[selected_name]
     sent = metrics["sentiment"].loc[selected_name]
     comp = metrics["competitors"].get(selected_name, None)
 
     lines = []
-    lines.append(f"Restaurant name: {selected_name}")
+    lines.append(f"Restaurant: {selected_name}")
     lines.append(f"City: {rest['city']}")
     lines.append(f"Cuisine: {rest['cuisine']}")
     lines.append(f"Zone: {rest.get('zone', 'N/A')}")
@@ -17,109 +17,104 @@ def build_context(selected_name: str, user_question: str, metrics: Dict[str, Any
     lines.append(f"Review count: {rest['review_count']}")
     lines.append(f"Weighted review count: {rest.get('weighted_reviews', rest['review_count']):.1f}")
     lines.append(f"Positive review %: {sent['positive_pct']:.1f}%")
-    lines.append(f"Satisfaction score (0-1): {rest['satisfaction_score']:.3f}")
-    if 'avg_delivery' in rest:
+    lines.append(f"Satisfaction score (0–1): {rest['satisfaction_score']:.3f}")
+
+    if "avg_delivery" in rest:
         lines.append(f"Average delivery time: {rest['avg_delivery']:.1f} minutes")
-    if 'price_range' in rest:
-        lines.append(f"Typical price range: {rest['price_range']}")
-    if 'avg_popularity' in rest:
-        lines.append(f"Average menu popularity score (0-100): {rest['avg_popularity']:.1f}")
+
+    if "price_range" in rest:
+        lines.append(f"Price range: {rest['price_range']}")
+
+    if "avg_popularity" in rest:
+        lines.append(f"Menu popularity score: {rest['avg_popularity']:.1f}")
 
     if comp is not None and not comp.empty:
-        lines.append("\nTop competitors in same city & cuisine (by satisfaction score):")
-        top_comp = comp.head(5)
-        for _, row in top_comp.iterrows():
+        lines.append("\nTop competitors:")
+        for _, row in comp.head(5).iterrows():
             lines.append(
                 f"- {row.name} — rating {row['avg_rating']:.2f}, "
                 f"satisfaction {row['satisfaction_score']:.3f}, "
-                f"review_count {row['review_count']}, "
-                f"avg_delivery {row.get('avg_delivery', float('nan')):.1f} min"
+                f"delivery {row.get('avg_delivery', float('nan')):.1f} min"
             )
 
     lines.append("\nUser question:")
-    lines.append(user_question.strip())
+    lines.append(user_question)
 
     return "\n".join(lines)
 
 
+# -------- OpenAI Provider (Now uses Streamlit Secrets) -------- #
+
 def _call_openai(prompt: str, temperature: float = 0.3) -> str:
-    """Call OpenAI Chat Completions API. Requires OPENAI_API_KEY env var."""
     try:
         from openai import OpenAI
-    except ImportError:
-        return (
-            "OpenAI Python package not installed. "
-            "Install `openai` and set OPENAI_API_KEY to use this provider."
-        )
+    except:
+        return "OpenAI package not installed."
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        return (
-            "OPENAI_API_KEY environment variable not set. "
-            "Please configure it on the server."
-        )
+        return "❌ OPENAI_API_KEY missing in .streamlit/secrets.toml"
 
     client = OpenAI(api_key=api_key)
-    system = (
+
+    system_prompt = (
         "You are an expert restaurant business analyst. "
-        "You receive structured summary data about a single restaurant and its competitors. "
-        "Provide clear, actionable insights and recommendations. "
-        "Do not fabricate numbers; use qualitative language when exact values are not provided."
+        "Provide insights based only on the given context. "
+        "Give clear recommendations and avoid guessing values."
     )
-    res = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=temperature,
-    )
-    return res.choices[0].message.content
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=temperature,
+        )
+        return res.choices[0].message.content
+    except Exception as e:
+        return f"❌ OpenAI API Error: {e}"
 
 
-def _call_huggingface(prompt: str, temperature: float = 0.3) -> str:
-    """Call a HuggingFace text generation model. Requires HF_API_TOKEN env var."""
+# -------- HuggingFace Provider (Now uses Streamlit Secrets) -------- #
+
+def _call_hf(prompt: str, temperature: float = 0.3) -> str:
     try:
         from huggingface_hub import InferenceClient
-    except ImportError:
-        return (
-            "huggingface_hub package not installed. "
-            "Install it and set HF_API_TOKEN to use this provider."
-        )
+    except:
+        return "huggingface_hub package not installed."
 
-    token = os.getenv("HF_API_TOKEN")
+    token = st.secrets.get("HF_API_TOKEN")
     if not token:
-        return (
-            "HF_API_TOKEN environment variable not set. "
-            "Please configure it on the server."
+        return "❌ HF_API_TOKEN missing in .streamlit/secrets.toml"
+
+    try:
+        client = InferenceClient(
+            model="mistralai/Mixtral-8x7B-Instruct-v0.1",
+            token=token
         )
-
-    client = InferenceClient(
-        model="mistralai/Mixtral-8x7B-Instruct-v0.1",
-        token=token,
-    )
-    response = client.text_generation(
-        prompt,
-        max_new_tokens=512,
-        temperature=float(temperature),
-    )
-    return response
+        response = client.text_generation(
+            prompt,
+            max_new_tokens=400,
+            temperature=float(temperature)
+        )
+        return response
+    except Exception as e:
+        return f"❌ HuggingFace API Error: {e}"
 
 
-def run_agent(
-    user_question: str,
-    context: str,
-    provider: str = "openai",
-    temperature: float = 0.3,
-) -> str:
-    """Dispatch the question + context to the chosen LLM provider."""
+# -------- Main Agent Caller -------- #
+
+def run_agent(user_question: str, context: str, provider="openai", temperature=0.3):
     prompt = (
-        "You are given analytics about a restaurant and its competitors.\n"
-        "Use only the information in the context.\n\n"
-        f"CONTEXT:\n{context}\n\n"
-        "TASK: Answer the user's question with clear, structured, practical recommendations. "
-        "Highlight strengths, weaknesses, and 3–5 concrete action items."
+        "CONTEXT:\n"
+        + context
+        + "\n\nTASK: Based on the context above, answer the user's question with clear analysis, "
+          "strengths, weaknesses, and 3–5 specific business recommendations."
     )
-    if provider == "huggingface":
-        return _call_huggingface(prompt, temperature=temperature)
-    return _call_openai(prompt, temperature=temperature)
+
+    if provider.lower() == "huggingface":
+        return _call_hf(prompt, temperature)
+
+    return _call_openai(prompt, temperature)
