@@ -157,52 +157,106 @@ with tabs[5]:
     menu_chart = get_menu_popularity_view(selected_name, metrics)
     st.plotly_chart(menu_chart, use_container_width=True)
 
+
 # -------------------------------
-# Nearby Restaurants (10 km)
+# Nearby Restaurants (Enhanced)
 # -------------------------------
 with tabs[6]:
-    st.subheader("Nearby Restaurants — 10 km Radius Search")
+    st.subheader("Nearby Restaurants — Enhanced 10 km Radius Search")
 
-    st.markdown("Enter any **Restaurant Name** and **City** from your CSV.")
+    st.markdown("Select a restaurant to retrieve all nearby competitors.")
 
-    colA, colB = st.columns(2)
-    r_name = colA.text_input("Restaurant Name")
-    r_city = colB.text_input("City Name")
+    # Auto suggest restaurants
+    restaurant_list = sorted(df["restaurant_name"].unique().tolist())
+    r_name = st.selectbox("Restaurant Name", restaurant_list)
+
+    # Auto fill city
+    possible_cities = df[df["restaurant_name"] == r_name]["city"].unique().tolist()
+    r_city = st.selectbox("City", possible_cities)
+
+    # Custom Radius
+    radius = st.slider("Search Radius (km)", 1, 20, 10)
 
     if st.button("Find Nearby Restaurants"):
         from utils.analysis_utils import get_nearby_restaurants
 
-        base, nearby = get_nearby_restaurants(df, r_name, r_city)
+        base, nearby = get_nearby_restaurants(df, r_name, r_city, radius_km=radius)
 
         if base is None:
             st.error("❌ Restaurant not found in this city.")
         else:
-            st.success("✅ Restaurant found! Showing results...")
+            st.success("✅ Restaurant found! Showing results!")
 
             st.markdown("### 📌 Selected Restaurant")
             st.dataframe(base, use_container_width=True)
 
-            st.markdown("### 📍 Restaurants within 10 km")
+            # Danger Score
+            nearby["danger_score"] = (
+                (radius - nearby["distance_km"].clip(0, radius)) *
+                (nearby["rating"].fillna(0) / 5)
+            ).round(2)
+
+            st.markdown("### 📍 Restaurants within Radius")
             st.dataframe(nearby, use_container_width=True)
 
-            # Download buttons
+            st.markdown("### ⭐ Top 5 Nearest")
+            nearest = nearby[nearby["restaurant_name"] != r_name] \
+                        .sort_values("distance_km") \
+                        .head(5)
+            st.dataframe(nearest[["restaurant_name","city","distance_km","rating"]],
+                         use_container_width=True)
+
+            st.markdown("### 🔥 Competitor Danger Ranking")
+            st.dataframe(
+                nearby.sort_values("danger_score", ascending=False)[
+                    ["restaurant_name","rating","distance_km","danger_score"]
+                ],
+                use_container_width=True
+            )
+
+            # Download reports
             st.download_button(
-                "Download Base Restaurant CSV",
-                data=base.to_csv(index=False),
-                file_name="selected_restaurant.csv",
-                mime="text/csv"
+                "Download Selected Restaurant CSV",
+                base.to_csv(index=False),
+                "selected_restaurant.csv",
+                "text/csv"
             )
 
             st.download_button(
-                "Download Nearby Restaurants CSV",
-                data=nearby.to_csv(index=False),
-                file_name="nearby_restaurants_10km.csv",
-                mime="text/csv"
+                "Download Nearby Competitors CSV",
+                nearby.to_csv(index=False),
+                "nearby_restaurants_enhanced.csv",
+                "text/csv"
             )
 
-            # Optional map
-            if "lat" in nearby.columns and "lon" in nearby.columns:
-                st.map(nearby[["lat", "lon"]])
+            # Map visualization
+            st.markdown("### 🗺 Nearby Restaurants Map")
+
+            import pydeck as pdk
+
+            layer = pdk.Layer(
+                "ScatterplotLayer",
+                nearby,
+                get_position='[lon, lat]',
+                get_color='[200, 30, 0, 160]',
+                get_radius=200,
+            )
+
+            view_state = pdk.ViewState(
+                latitude=nearby["lat"].mean(),
+                longitude=nearby["lon"].mean(),
+                zoom=12,
+                pitch=40,
+            )
+
+            deck = pdk.Deck(
+                layers=[layer],
+                initial_view_state=view_state,
+                tooltip={"text": "{restaurant_name}\nDistance: {distance_km} km"}
+            )
+
+            st.pydeck_chart(deck)
+
 
 
 # -------- AI Agent --------
