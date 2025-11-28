@@ -161,62 +161,139 @@ with tabs[5]:
 # -------------------------------
 # Nearby Restaurants (Enhanced)
 # -------------------------------
+# -------------------------------
+# Nearby Restaurants (Enhanced + Auto Column Detection)
+# -------------------------------
 with tabs[6]:
-    st.subheader("Nearby Restaurants — Enhanced 10 km Radius Search")
+    st.subheader("Nearby Restaurants — Enhanced Radius Search")
 
-    st.markdown("Select a restaurant to retrieve all nearby competitors.")
+    st.markdown("Select a restaurant to retrieve nearby competitors within a radius.")
 
-    # Auto suggest restaurants
-    restaurant_list = sorted(df["restaurant_name"].unique().tolist())
-    r_name = st.selectbox("Restaurant Name", restaurant_list)
+    # ------------------------------------------
+    # AUTO-DETECT IMPORTANT COLUMNS
+    # ------------------------------------------
+    COLUMN_MAP = {
+        "restaurant": ["restaurant_name", "restaurant", "resturant", "name", "rname", "hotel_name"],
+        "city": ["city", "location", "place", "area", "city_name"],
+        "lat": ["lat", "latitude"],
+        "lon": ["lon", "longitude", "lng"],
+        "rating": ["rating", "ratings", "stars"]
+    }
 
-    # Auto fill city
-    possible_cities = df[df["restaurant_name"] == r_name]["city"].unique().tolist()
+    def find_column(df, possible_names):
+        """Find correct column name regardless of variations."""
+        df_cols = [c.lower().strip() for c in df.columns]
+        for name in possible_names:
+            name = name.lower().strip()
+            if name in df_cols:
+                return df.columns[df_cols.index(name)]
+        return None
+
+    col_restaurant = find_column(df, COLUMN_MAP["restaurant"])
+    col_city = find_column(df, COLUMN_MAP["city"])
+    col_lat = find_column(df, COLUMN_MAP["lat"])
+    col_lon = find_column(df, COLUMN_MAP["lon"])
+    col_rating = find_column(df, COLUMN_MAP["rating"])
+
+    missing = []
+    if col_restaurant is None: missing.append("restaurant")
+    if col_city is None: missing.append("city")
+    if col_lat is None: missing.append("latitude")
+    if col_lon is None: missing.append("longitude")
+
+    if missing:
+        st.error(f"❌ Missing required columns in CSV: {', '.join(missing)}")
+        st.stop()
+
+    # ------------------------------------------
+    # Restaurant selection
+    # ------------------------------------------
+    restaurant_list = sorted(df[col_restaurant].dropna().unique().tolist())
+    r_name = st.selectbox("Select Restaurant", restaurant_list)
+
+    # ------------------------------------------
+    # Auto-fill city
+    # ------------------------------------------
+    possible_cities = df[df[col_restaurant] == r_name][col_city].dropna().unique().tolist()
     r_city = st.selectbox("City", possible_cities)
 
-    # Custom Radius
+    # ------------------------------------------
+    # Radius selection
+    # ------------------------------------------
     radius = st.slider("Search Radius (km)", 1, 20, 10)
 
+    # ------------------------------------------
+    # Perform search
+    # ------------------------------------------
     if st.button("Find Nearby Restaurants"):
         from utils.analysis_utils import get_nearby_restaurants
 
-        base, nearby = get_nearby_restaurants(df, r_name, r_city, radius_km=radius)
+        base, nearby = get_nearby_restaurants(
+            df.rename(columns={
+                col_restaurant: "restaurant_name",
+                col_city: "city",
+                col_lat: "lat",
+                col_lon: "lon"
+            }),
+            r_name,
+            r_city,
+            radius_km=radius
+        )
 
         if base is None:
             st.error("❌ Restaurant not found in this city.")
         else:
-            st.success("✅ Restaurant found! Showing results!")
+            st.success("✅ Restaurant found! Showing results...")
 
-            st.markdown("### 📌 Selected Restaurant")
+            st.markdown("### 📌 Selected Restaurant (Base Location)")
             st.dataframe(base, use_container_width=True)
 
-            # Danger Score
+            # ------------------------------------------
+            # Compute Danger Score
+            # ------------------------------------------
+            if col_rating not in df.columns:
+                nearby["rating"] = 0   # fallback if no ratings
+
             nearby["danger_score"] = (
                 (radius - nearby["distance_km"].clip(0, radius)) *
                 (nearby["rating"].fillna(0) / 5)
             ).round(2)
 
+            # ------------------------------------------
+            # Show Nearby List
+            # ------------------------------------------
             st.markdown("### 📍 Restaurants within Radius")
             st.dataframe(nearby, use_container_width=True)
 
-            st.markdown("### ⭐ Top 5 Nearest")
+            # ------------------------------------------
+            # Top 5 Nearest
+            # ------------------------------------------
+            st.markdown("### ⭐ Top 5 Nearest Restaurants")
             nearest = nearby[nearby["restaurant_name"] != r_name] \
                         .sort_values("distance_km") \
                         .head(5)
-            st.dataframe(nearest[["restaurant_name","city","distance_km","rating"]],
-                         use_container_width=True)
 
+            st.dataframe(
+                nearest[["restaurant_name", "city", "distance_km", "rating"]],
+                use_container_width=True
+            )
+
+            # ------------------------------------------
+            # Danger Ranking
+            # ------------------------------------------
             st.markdown("### 🔥 Competitor Danger Ranking")
             st.dataframe(
                 nearby.sort_values("danger_score", ascending=False)[
-                    ["restaurant_name","rating","distance_km","danger_score"]
+                    ["restaurant_name", "rating", "distance_km", "danger_score"]
                 ],
                 use_container_width=True
             )
 
-            # Download reports
+            # ------------------------------------------
+            # Downloads
+            # ------------------------------------------
             st.download_button(
-                "Download Selected Restaurant CSV",
+                "Download Base Restaurant CSV",
                 base.to_csv(index=False),
                 "selected_restaurant.csv",
                 "text/csv"
@@ -229,7 +306,9 @@ with tabs[6]:
                 "text/csv"
             )
 
-            # Map visualization
+            # ------------------------------------------
+            # Map Visualization
+            # ------------------------------------------
             st.markdown("### 🗺 Nearby Restaurants Map")
 
             import pydeck as pdk
@@ -239,14 +318,15 @@ with tabs[6]:
                 nearby,
                 get_position='[lon, lat]',
                 get_color='[200, 30, 0, 160]',
-                get_radius=200,
+                get_radius=250,
+                pickable=True,
             )
 
             view_state = pdk.ViewState(
                 latitude=nearby["lat"].mean(),
                 longitude=nearby["lon"].mean(),
                 zoom=12,
-                pitch=40,
+                pitch=45,
             )
 
             deck = pdk.Deck(
@@ -256,6 +336,7 @@ with tabs[6]:
             )
 
             st.pydeck_chart(deck)
+
 
 
 
