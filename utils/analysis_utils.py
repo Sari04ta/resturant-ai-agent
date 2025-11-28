@@ -338,3 +338,48 @@ def get_menu_popularity_view(name: str, metrics: Dict[str, Any]):
         title="Average menu item popularity (0–100)",
     )
     return chart
+
+import math
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat/2)**2 
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon/2)**2
+    )
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def get_nearby_restaurants(df, restaurant_name, city_name, radius_km=10):
+    df = df.copy()
+
+    df["restaurant_name"] = df["restaurant_name"].str.lower()
+    df["city"] = df["city"].str.lower()
+
+    restaurant_name = restaurant_name.lower()
+    city_name = city_name.lower()
+
+    base = df[
+        (df["restaurant_name"] == restaurant_name) &
+        (df["city"] == city_name)
+    ]
+
+    if base.empty:
+        return None, None
+
+    base_lat = base.iloc[0]["lat"]
+    base_lon = base.iloc[0]["lon"]
+
+    df["distance_km"] = df.apply(
+        lambda row: haversine(base_lat, base_lon, row["lat"], row["lon"]),
+        axis=1
+    )
+
+    nearby = df[df["distance_km"] <= radius_km]
+
+    return base, nearby
+
