@@ -80,18 +80,20 @@ with st.sidebar:
 
     selected_name = st.selectbox("Restaurant", filtered_names)
 
-tabs = st.tabs(
-    [
-        "Overview",
-        "Competitors",
-        "Sentiment",
-        "Delivery",
-        "Price",
-        "Menu Popularity",
-        "AI Agent",
-        "Raw Data",
-    ]
-)
+
+
+tabs = st.tabs([
+    "Overview",
+    "Competitors",
+    "Sentiment",
+    "Delivery Insights",
+    "Price Insights",
+    "Menu Popularity",
+    "Nearby Restaurants (10 km)",
+    "AI Agent",
+    "Raw Data"
+])
+
 
 # -------- Overview --------
 with tabs[0]:
