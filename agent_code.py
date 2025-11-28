@@ -65,7 +65,8 @@ def _call_openai(prompt: str, temperature: float = 0.3) -> str:
 
     try:
         res = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
+
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
