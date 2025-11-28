@@ -42,7 +42,7 @@ export HF_API_TOKEN="your-hf-token"          # optional
 streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 ```
 
-Visit: http://localhost:8501
+
 
 ## 4. Docker
 
@@ -54,4 +54,3 @@ docker run -p 8501:8501 \
   restaurant-agent
 ```
 
-Then open: http://localhost:8501
