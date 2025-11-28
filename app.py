@@ -157,8 +157,56 @@ with tabs[5]:
     menu_chart = get_menu_popularity_view(selected_name, metrics)
     st.plotly_chart(menu_chart, use_container_width=True)
 
-# -------- AI Agent --------
+# -------------------------------
+# Nearby Restaurants (10 km)
+# -------------------------------
 with tabs[6]:
+    st.subheader("Nearby Restaurants — 10 km Radius Search")
+
+    st.markdown("Enter any **Restaurant Name** and **City** from your CSV.")
+
+    colA, colB = st.columns(2)
+    r_name = colA.text_input("Restaurant Name")
+    r_city = colB.text_input("City Name")
+
+    if st.button("Find Nearby Restaurants"):
+        from utils.analysis_utils import get_nearby_restaurants
+
+        base, nearby = get_nearby_restaurants(df, r_name, r_city)
+
+        if base is None:
+            st.error("❌ Restaurant not found in this city.")
+        else:
+            st.success("✅ Restaurant found! Showing results...")
+
+            st.markdown("### 📌 Selected Restaurant")
+            st.dataframe(base, use_container_width=True)
+
+            st.markdown("### 📍 Restaurants within 10 km")
+            st.dataframe(nearby, use_container_width=True)
+
+            # Download buttons
+            st.download_button(
+                "Download Base Restaurant CSV",
+                data=base.to_csv(index=False),
+                file_name="selected_restaurant.csv",
+                mime="text/csv"
+            )
+
+            st.download_button(
+                "Download Nearby Restaurants CSV",
+                data=nearby.to_csv(index=False),
+                file_name="nearby_restaurants_10km.csv",
+                mime="text/csv"
+            )
+
+            # Optional map
+            if "lat" in nearby.columns and "lon" in nearby.columns:
+                st.map(nearby[["lat", "lon"]])
+
+
+# -------- AI Agent --------
+with tabs[7]:
     st.subheader("Ask the AI agent")
     st.markdown(
         "The agent uses all computed metrics (ratings, sentiment, delivery, pricing, zone, "
@@ -191,7 +239,7 @@ with tabs[6]:
             st.markdown("### Agent answer")
             st.write(answer)
 
-# -------- Raw data --------
-with tabs[7]:
+# -------- Raw Data --------
+with tabs[8]:
     st.subheader("Raw dataframe (first 500 rows)")
     st.dataframe(df.head(500), use_container_width=True)
