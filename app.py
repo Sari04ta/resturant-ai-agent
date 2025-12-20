@@ -135,72 +135,37 @@ with tabs[2]:
     c4.metric("Avg compound", f"{sent_view['avg_compound']:.3f}")
 
     st.plotly_chart(sent_view["chart"], use_container_width=True)
-    if not sent_view["samples"].empty:
-        st.markdown("### Sample reviews")
-        st.dataframe(sent_view["samples"], use_container_width=True, hide_index=True)
 
-    
     # -------------------------------
-    # Most Negative Review (Safe)
+    # Most Negative Review
     # -------------------------------
+    neg_df = df[
+        (df["name"] == selected_name) &
+        (df["sentiment_score"] < 0)
+    ]
 
-    # Ensure sentiment_score exists
-    if "sentiment_score" not in df.columns:
-        st.info("Sentiment score not found in raw data. Using computed sentiment.")
+    if not neg_df.empty:
+        worst_review = neg_df.loc[neg_df["sentiment_score"].idxmin()]
 
-        # Try to recover from metrics if available
-        try:
-            sentiment_df = metrics["reviews"]
-        except KeyError:
-            st.warning("Sentiment data unavailable.")
-            sentiment_df = None
+        st.markdown("### 🚨 Most Negative Review")
+        st.metric("Sentiment score", f"{worst_review['sentiment_score']:.3f}")
+        st.write(worst_review["review_text"])
     else:
-        sentiment_df = df
+        st.info("No negative reviews for this restaurant.")
 
-    if sentiment_df is not None:
-        neg_df = sentiment_df[
-            (sentiment_df["name"] == selected_name) &
-            (sentiment_df["sentiment_score"].notna())
-        ]
+    # -------------------------------
+    # Download ALL negative reviews
+    # -------------------------------
+    all_neg = df[df["sentiment_score"] < 0].sort_values("sentiment_score")
 
-        if not neg_df.empty:
-            worst_review = neg_df.loc[neg_df["sentiment_score"].idxmin()]
-
-            st.markdown("### 🚨 Most Negative Review")
-            st.metric(
-                "Sentiment score",
-                f"{worst_review['sentiment_score']:.3f}"
-            )
-
-            st.write("**Review text:**")
-            st.write(worst_review.get("review_text", "Text not available"))
-
-            meta_cols = ["rating", "review_date"]
-            meta_cols = [c for c in meta_cols if c in worst_review]
-
-            if meta_cols:
-                st.markdown("**Metadata:**")
-                st.write(worst_review[meta_cols])
-    else:
-        st.info("No negative reviews found for this restaurant.")
-
-   # -------------------------------
-# Download all negative reviews
-# -------------------------------
-if "sentiment_score" in df.columns:
-    neg_reviews = df[df["sentiment_score"] < 0].sort_values("sentiment_score")
-
-    if not neg_reviews.empty:
+    if not all_neg.empty:
         st.download_button(
-            label="⬇️ Download all negative reviews (CSV)",
-            data=neg_reviews.to_csv(index=False),
+            "⬇️ Download all negative reviews (CSV)",
+            data=all_neg.to_csv(index=False),
             file_name="negative_reviews.csv",
             mime="text/csv"
         )
-    else:
-        st.info("No negative reviews found.")
-else:
-    st.warning("Sentiment score not available. Cannot export negative reviews.")
+
 
     
    
