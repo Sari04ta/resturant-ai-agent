@@ -138,35 +138,53 @@ with tabs[2]:
     if not sent_view["samples"].empty:
         st.markdown("### Sample reviews")
         st.dataframe(sent_view["samples"], use_container_width=True, hide_index=True)
-        # -------------------------------
-    # Most Negative Review (Single Worst)
+
+    
     # -------------------------------
-    neg_df = df[
-        (df["name"] == selected_name) &
-        (df["sentiment_score"].notna())
-    ]
+    # Most Negative Review (Safe)
+    # -------------------------------
 
-    if not neg_df.empty:
-        worst_review = neg_df.loc[neg_df["sentiment_score"].idxmin()]
+    # Ensure sentiment_score exists
+    if "sentiment_score" not in df.columns:
+        st.info("Sentiment score not found in raw data. Using computed sentiment.")
 
-        st.markdown("### 🚨 Most Negative Review")
-        st.metric(
-            "Sentiment score",
-            f"{worst_review['sentiment_score']:.3f}"
-        )
+        # Try to recover from metrics if available
+        try:
+            sentiment_df = metrics["reviews"]
+        except KeyError:
+            st.warning("Sentiment data unavailable.")
+            sentiment_df = None
+    else:
+        sentiment_df = df
 
-        st.write("**Review text:**")
-        st.write(worst_review["review_text"])
+    if sentiment_df is not None:
+        neg_df = sentiment_df[
+            (sentiment_df["name"] == selected_name) &
+            (sentiment_df["sentiment_score"].notna())
+        ]
 
-        # Optional metadata if present
-        meta_cols = ["rating", "review_date"]
-        meta_cols = [c for c in meta_cols if c in worst_review]
+        if not neg_df.empty:
+            worst_review = neg_df.loc[neg_df["sentiment_score"].idxmin()]
 
-        if meta_cols:
-            st.markdown("**Metadata:**")
-            st.write(worst_review[meta_cols])
+            st.markdown("### 🚨 Most Negative Review")
+            st.metric(
+                "Sentiment score",
+                f"{worst_review['sentiment_score']:.3f}"
+            )
+
+            st.write("**Review text:**")
+            st.write(worst_review.get("review_text", "Text not available"))
+
+            meta_cols = ["rating", "review_date"]
+            meta_cols = [c for c in meta_cols if c in worst_review]
+
+            if meta_cols:
+                st.markdown("**Metadata:**")
+                st.write(worst_review[meta_cols])
     else:
         st.info("No negative reviews found for this restaurant.")
+    
+   
 
 
 
