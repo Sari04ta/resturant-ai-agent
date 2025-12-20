@@ -115,7 +115,8 @@ tabs = st.tabs([
     "Price",
     "Menu",
     "AI Agent",
-    "Raw Data"
+    "Raw Data",
+    "Debug"
 ])
 
 
