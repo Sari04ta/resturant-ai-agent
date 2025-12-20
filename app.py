@@ -132,12 +132,24 @@ with tabs[0]:
     c5.metric("Zone", overview["zone"])
 
     st.plotly_chart(overview["rating_chart"], use_container_width=True)
+    st.markdown("### Rating vs competitors")
+    st.plotly_chart(overview["rating_chart"], use_container_width=True)
+
+    if overview.get("trend_chart") is not None:
+        st.markdown("### Rating & sentiment trend over time")
+        st.plotly_chart(overview["trend_chart"], use_container_width=True)
+
 
 
 # ===================== COMPETITORS =====================
+
 with tabs[1]:
+    st.subheader(f"Competitor landscape — {selected_name}")
     comp = get_competitor_view(selected_name, metrics)
     st.plotly_chart(comp["bar_chart"], use_container_width=True)
+    if comp.get("map") is not None:
+        st.markdown("### Heatmap of sentiment around competitors")
+        st.pydeck_chart(comp["map"])
 
 
 # ===================== SENTIMENT =====================
