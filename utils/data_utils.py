@@ -1,8 +1,8 @@
-
 from __future__ import annotations
 
 import pandas as pd
 from typing import List, Tuple
+from utils.sentiment_utils import compute_sentiment
 
 REQUIRED_COLS = [
     "name",
@@ -23,36 +23,19 @@ def _normalise_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_restaurant_data(file) -> pd.DataFrame:
-    """Load a user CSV, normalise columns and basic types.
-
-    Required columns (case-insensitive, spaces allowed):
-
-    - name
-    - city
-    - cuisine
-    - rating
-    - review_text
-    - review_date
-    - lat
-    - lon
-
-    Optional (if missing, will be created with default values):
-
-    - zone
-    - num_reviews
-    - price_range
-    - delivery_time
-    - menu_item_popularity
+    """
+    Load restaurant CSV, normalize schema, enforce types,
+    and GUARANTEE sentiment_score exists.
     """
     df = pd.read_csv(file)
     df = _normalise_cols(df)
 
+    # Validate required columns
     missing = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing:
-        raise ValueError(
-            "Missing required columns: " + ", ".join(missing)
-        )
+        raise ValueError("Missing required columns: " + ", ".join(missing))
 
+    # Normalize core fields
     df["name"] = df["name"].astype(str).str.strip()
     df["city"] = df["city"].astype(str).str.strip()
     df["cuisine"] = df["cuisine"].astype(str).str.strip()
@@ -63,37 +46,24 @@ def load_restaurant_data(file) -> pd.DataFrame:
     df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
 
     # Optional fields
-    if "zone" not in df.columns:
-        df["zone"] = "Unknown"
-    if "num_reviews" not in df.columns:
-        df["num_reviews"] = 0
-    if "price_range" not in df.columns:
-        df["price_range"] = "Unknown"
-    if "delivery_time" not in df.columns:
-        df["delivery_time"] = None
-    if "menu_item_popularity" not in df.columns:
-        df["menu_item_popularity"] = None
+    df.setdefault("zone", "Unknown")
+    df.setdefault("num_reviews", 0)
+    df.setdefault("price_range", "Unknown")
+    df.setdefault("delivery_time", None)
+    df.setdefault("menu_item_popularity", None)
 
+    # Drop invalid rows
     df.dropna(subset=["name", "city", "cuisine", "rating", "review_text"], inplace=True)
 
-    return df
-
-
-def get_restaurant_options(df: pd.DataFrame) -> Tuple[List[str], List[str], List[str]]:
-    name_options = sorted(df["name"].unique().tolist())
-    city_options = sorted([c for c in df["city"].dropna().unique().tolist() if c])
-    cuisine_options = sorted([c for c in df["cuisine"].dropna().unique().tolist() if c])
-    return name_options, city_options, cuisine_options
-
-# utils/data_utils.py
-import pandas as pd
-from utils.sentiment_utils import compute_sentiment
-
-def load_restaurant_data(uploaded_file):
-    df = pd.read_csv(uploaded_file)
-
+    # 🔒 HARD GUARANTEE sentiment_score
     if "sentiment_score" not in df.columns:
         df["sentiment_score"] = df["review_text"].apply(compute_sentiment)
 
     return df
 
+
+def get_restaurant_options(df: pd.DataFrame) -> Tuple[List[str], List[str], List[str]]:
+    names = sorted(df["name"].dropna().unique().tolist())
+    cities = sorted(df["city"].dropna().unique().tolist())
+    cuisines = sorted(df["cuisine"].dropna().unique().tolist())
+    return names, cities, cuisines
