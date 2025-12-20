@@ -418,4 +418,5 @@ with tabs[7]:
 
 # ===================== RAW DATA =====================
 with tabs[8]:
+    st.subheader("Raw dataframe (first 500 rows)")
     st.dataframe(df.head(500), use_container_width=True)
