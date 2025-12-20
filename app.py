@@ -183,6 +183,25 @@ with tabs[2]:
                 st.write(worst_review[meta_cols])
     else:
         st.info("No negative reviews found for this restaurant.")
+
+   # -------------------------------
+# Download all negative reviews
+# -------------------------------
+if "sentiment_score" in df.columns:
+    neg_reviews = df[df["sentiment_score"] < 0].sort_values("sentiment_score")
+
+    if not neg_reviews.empty:
+        st.download_button(
+            label="⬇️ Download all negative reviews (CSV)",
+            data=neg_reviews.to_csv(index=False),
+            file_name="negative_reviews.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("No negative reviews found.")
+else:
+    st.warning("Sentiment score not available. Cannot export negative reviews.")
+
     
    
 
