@@ -21,21 +21,14 @@ def _normalise_cols(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
     return df
 
-
-def load_restaurant_data(file) -> pd.DataFrame:
-    """
-    Load restaurant CSV, normalize schema, enforce types,
-    and GUARANTEE sentiment_score exists.
-    """
+def load_restaurant_data(file):
     df = pd.read_csv(file)
     df = _normalise_cols(df)
 
-    # Validate required columns
     missing = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing:
         raise ValueError("Missing required columns: " + ", ".join(missing))
 
-    # Normalize core fields
     df["name"] = df["name"].astype(str).str.strip()
     df["city"] = df["city"].astype(str).str.strip()
     df["cuisine"] = df["cuisine"].astype(str).str.strip()
@@ -45,21 +38,24 @@ def load_restaurant_data(file) -> pd.DataFrame:
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
     df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
 
-    # Optional fields
-    df.setdefault("zone", "Unknown")
-    df.setdefault("num_reviews", 0)
-    df.setdefault("price_range", "Unknown")
-    df.setdefault("delivery_time", None)
-    df.setdefault("menu_item_popularity", None)
+    # ✅ Correct defaults
+    if "zone" not in df.columns:
+        df["zone"] = "Unknown"
+    if "num_reviews" not in df.columns:
+        df["num_reviews"] = 0
+    if "price_range" not in df.columns:
+        df["price_range"] = "Unknown"
+    if "delivery_time" not in df.columns:
+        df["delivery_time"] = None
+    if "menu_item_popularity" not in df.columns:
+        df["menu_item_popularity"] = None
 
-    # Drop invalid rows
     df.dropna(subset=["name", "city", "cuisine", "rating", "review_text"], inplace=True)
-
-    # 🔒 HARD GUARANTEE sentiment_score
-    if "sentiment_score" not in df.columns:
-        df["sentiment_score"] = df["review_text"].apply(compute_sentiment)
-
     return df
+
+
+
+
 
 
 def get_restaurant_options(df: pd.DataFrame) -> Tuple[List[str], List[str], List[str]]:
