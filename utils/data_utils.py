@@ -84,3 +84,16 @@ def get_restaurant_options(df: pd.DataFrame) -> Tuple[List[str], List[str], List
     city_options = sorted([c for c in df["city"].dropna().unique().tolist() if c])
     cuisine_options = sorted([c for c in df["cuisine"].dropna().unique().tolist() if c])
     return name_options, city_options, cuisine_options
+
+# utils/data_utils.py
+import pandas as pd
+from utils.sentiment_utils import compute_sentiment
+
+def load_restaurant_data(uploaded_file):
+    df = pd.read_csv(uploaded_file)
+
+    if "sentiment_score" not in df.columns:
+        df["sentiment_score"] = df["review_text"].apply(compute_sentiment)
+
+    return df
+
