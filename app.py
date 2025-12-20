@@ -138,6 +138,37 @@ with tabs[2]:
     if not sent_view["samples"].empty:
         st.markdown("### Sample reviews")
         st.dataframe(sent_view["samples"], use_container_width=True, hide_index=True)
+        # -------------------------------
+    # Most Negative Review (Single Worst)
+    # -------------------------------
+    neg_df = df[
+        (df["name"] == selected_name) &
+        (df["sentiment_score"].notna())
+    ]
+
+    if not neg_df.empty:
+        worst_review = neg_df.loc[neg_df["sentiment_score"].idxmin()]
+
+        st.markdown("### 🚨 Most Negative Review")
+        st.metric(
+            "Sentiment score",
+            f"{worst_review['sentiment_score']:.3f}"
+        )
+
+        st.write("**Review text:**")
+        st.write(worst_review["review_text"])
+
+        # Optional metadata if present
+        meta_cols = ["rating", "review_date"]
+        meta_cols = [c for c in meta_cols if c in worst_review]
+
+        if meta_cols:
+            st.markdown("**Metadata:**")
+            st.write(worst_review[meta_cols])
+    else:
+        st.info("No negative reviews found for this restaurant.")
+
+
 
 # -------- Delivery --------
 with tabs[3]:
