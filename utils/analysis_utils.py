@@ -49,14 +49,48 @@ def seating_recommendation(seating_score, wait_time):
         return "Better for takeaway or off-peak hours"
     else:
         return "Suitable for quick visits"
-df["seating_signal"] = df["review_text"].astype(str).apply(extract_seating_signal)
 
-restaurant_metrics["seating_score"] = seating_satisfaction_score(df, name)
-restaurant_metrics["estimated_wait_time"] = estimate_wait_time(df, name)
-restaurant_metrics["seating_recommendation"] = seating_recommendation(
-    restaurant_metrics["seating_score"],
-    restaurant_metrics["estimated_wait_time"]
 )
+# ===================== SEATING ANALYSIS =====================
+
+def seating_satisfaction_score(df: pd.DataFrame, restaurant_name: str) -> int:
+    sub = df[df["name"] == restaurant_name].copy()
+
+    if sub.empty:
+        return 50
+
+    sub["seating_signal"] = sub["review_text"].astype(str).apply(extract_seating_signal)
+
+    raw_score = sub["seating_signal"].sum()
+    normalized = max(0, min(100, 50 + raw_score * 10))
+    return int(normalized)
+
+
+def compute_seating_metrics(df: pd.DataFrame, restaurant_name: str) -> Dict[str, Any]:
+    seating_score = seating_satisfaction_score(df, restaurant_name)
+    wait_time = estimate_wait_time(df, restaurant_name)
+
+    recommendation = seating_recommendation(seating_score, wait_time)
+
+    return {
+        "seating_score": seating_score,
+        "estimated_wait_time": wait_time,
+        "seating_recommendation": recommendation,
+    }
+# ---------------- Seating metrics per restaurant ----------------
+rest["seating_score"] = [
+    seating_satisfaction_score(df, name) for name in rest.index
+]
+
+rest["estimated_wait_time"] = [
+    estimate_wait_time(df, name) for name in rest.index
+]
+
+rest["seating_recommendation"] = [
+    seating_recommendation(s, w)
+    for s, w in zip(rest["seating_score"], rest["estimated_wait_time"])
+]
+
 def competitor_seating_comparison(metrics, selected_name):
     base = metrics["restaurants"].loc[selected_name]
     cuisine = base["cuisine"]
