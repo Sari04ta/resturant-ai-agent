@@ -436,16 +436,27 @@ with tabs[8]:
     st.subheader("Raw dataframe (first 500 rows)")
     st.dataframe(df.head(500), use_container_width=True)
 
+# ===================== SEATING SATISFACTION =====================
 with tabs[9]:
-    st.metric(
-    "Seating Satisfaction",
-    f"{overview['seating_score']}/100"
-    )
+    st.subheader(f"Seating Experience — {selected_name}")
 
-   st.metric(
-    "Estimated Wait Time",
-    f"{overview['estimated_wait_time']} mins"
-   )
+    overview = get_overview(selected_name, metrics)
 
-   st.info(f"💡 {overview['seating_recommendation']}")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.metric(
+            "Seating Satisfaction",
+            f"{overview['seating_score']}/100"
+        )
+
+    with c2:
+        st.metric(
+            "Estimated Wait Time",
+            f"{overview['estimated_wait_time']} mins"
+        )
+
+    st.markdown("### 💡 Recommendation")
+    st.info(overview["seating_recommendation"])
+
 
