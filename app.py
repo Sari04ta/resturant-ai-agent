@@ -116,7 +116,8 @@ tabs = st.tabs([
     "Menu",
     "AI Agent",
     "Raw Data",
-    "Debug"
+    "Debug",
+    "Seating Satisfaction"
 ])
 
 
@@ -434,3 +435,17 @@ with tabs[7]:
 with tabs[8]:
     st.subheader("Raw dataframe (first 500 rows)")
     st.dataframe(df.head(500), use_container_width=True)
+
+with tabs[9]:
+    st.metric(
+    "Seating Satisfaction",
+    f"{overview['seating_score']}/100"
+    )
+
+   st.metric(
+    "Estimated Wait Time",
+    f"{overview['estimated_wait_time']} mins"
+   )
+
+   st.info(f"💡 {overview['seating_recommendation']}")
+
