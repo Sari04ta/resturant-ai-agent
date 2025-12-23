@@ -1,12 +1,16 @@
-
 from __future__ import annotations
 
 from typing import Dict, Any
+import math
 import pandas as pd
 import plotly.express as px
 import pydeck as pdk
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+
+# ==================================================
+# Seating NLP keywords
+# ==================================================
 SEATING_KEYWORDS = {
     "positive": [
         "spacious", "comfortable seating", "ample seating",
@@ -19,6 +23,11 @@ SEATING_KEYWORDS = {
         "packed", "no place to sit"
     ]
 }
+
+
+# ==================================================
+# Seating NLP extraction
+# ==================================================
 def extract_seating_signal(review: str) -> int:
     review = review.lower()
     score = 0
@@ -32,7 +41,9 @@ def extract_seating_signal(review: str) -> int:
             score -= 1
 
     return score
-def estimate_wait_time(df, restaurant_name):
+
+
+def estimate_wait_time(df: pd.DataFrame, restaurant_name: str) -> int:
     sub = df[df["name"] == restaurant_name]
 
     wait_mentions = sub["review_text"].str.lower().str.contains(
@@ -40,7 +51,9 @@ def estimate_wait_time(df, restaurant_name):
     ).sum()
 
     return min(60, 5 + wait_mentions * 3)
-def seating_recommendation(seating_score, wait_time):
+
+
+def seating_recommendation(seating_score: float, wait_time: int) -> str:
     if seating_score >= 80 and wait_time <= 10:
         return "Ideal for families and groups"
     elif seating_score >= 60:
@@ -50,66 +63,31 @@ def seating_recommendation(seating_score, wait_time):
     else:
         return "Suitable for quick visits"
 
-)
-# ===================== SEATING ANALYSIS =====================
 
-def seating_satisfaction_score(df: pd.DataFrame, restaurant_name: str) -> int:
-    sub = df[df["name"] == restaurant_name].copy()
-
-    if sub.empty:
-        return 50
-
-    sub["seating_signal"] = sub["review_text"].astype(str).apply(extract_seating_signal)
-
-    raw_score = sub["seating_signal"].sum()
-    normalized = max(0, min(100, 50 + raw_score * 10))
-    return int(normalized)
-
-
-def compute_seating_metrics(df: pd.DataFrame, restaurant_name: str) -> Dict[str, Any]:
-    seating_score = seating_satisfaction_score(df, restaurant_name)
-    wait_time = estimate_wait_time(df, restaurant_name)
-
-    recommendation = seating_recommendation(seating_score, wait_time)
-
-    return {
-        "seating_score": seating_score,
-        "estimated_wait_time": wait_time,
-        "seating_recommendation": recommendation,
-    }
-# ---------------- Seating metrics per restaurant ----------------
-rest["seating_score"] = [
-    seating_satisfaction_score(df, name) for name in rest.index
-]
-
-rest["estimated_wait_time"] = [
-    estimate_wait_time(df, name) for name in rest.index
-]
-
-rest["seating_recommendation"] = [
-    seating_recommendation(s, w)
-    for s, w in zip(rest["seating_score"], rest["estimated_wait_time"])
-]
-
-def competitor_seating_comparison(metrics, selected_name):
-    base = metrics["restaurants"].loc[selected_name]
-    cuisine = base["cuisine"]
-
-    competitors = metrics["restaurants"]
-    competitors = competitors[competitors["cuisine"] == cuisine]
-
-    return competitors.sort_values(
-        by=["seating_score", "estimated_wait_time"],
-        ascending=[False, True]
+# ==================================================
+# Distance calculation (Haversine)
+# ==================================================
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
     )
+    return 2 * R * math.asin(math.sqrt(a))
 
 
-
-
+# ==================================================
+# Sentiment computation
+# ==================================================
 def _compute_sentiment(df: pd.DataFrame) -> pd.DataFrame:
-    ana = SentimentIntensityAnalyzer()
-    scores = df["review_text"].astype(str).apply(ana.polarity_scores)
+    analyzer = SentimentIntensityAnalyzer()
+    scores = df["review_text"].astype(str).apply(analyzer.polarity_scores)
     scores_df = pd.DataFrame(list(scores))
+
     df = df.copy()
     df["compound"] = scores_df["compound"]
 
@@ -124,11 +102,18 @@ def _compute_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# ==================================================
+# CORE METRICS PIPELINE
+# ==================================================
 def compute_all_metrics(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df = _compute_sentiment(df_raw)
 
-    # Sentiment per restaurant
+    # Seating NLP signal
+    df["seating_signal"] = df["review_text"].astype(str).apply(extract_seating_signal)
+
     grp = df.groupby("name")
+
+    # Sentiment stats
     sentiment_stats = grp["sentiment_bin"].value_counts().unstack(fill_value=0)
     sentiment_stats["total"] = grp.size()
     sentiment_stats["positive_pct"] = (
@@ -136,7 +121,7 @@ def compute_all_metrics(df_raw: pd.DataFrame) -> Dict[str, Any]:
     )
     sentiment_stats["avg_compound"] = grp["compound"].mean()
 
-    # Restaurant-level stats
+    # Restaurant-level aggregation
     rest = grp.agg(
         city=("city", "first"),
         cuisine=("cuisine", "first"),
@@ -148,67 +133,79 @@ def compute_all_metrics(df_raw: pd.DataFrame) -> Dict[str, Any]:
         avg_popularity=("menu_item_popularity", "mean"),
         avg_lat=("lat", "mean"),
         avg_lon=("lon", "mean"),
+        seating_signal=("seating_signal", "mean"),
     )
 
     rest["positive_pct"] = sentiment_stats["positive_pct"]
 
-    # Satisfaction score: rating (50%) + positive% (30%) + popularity (20%)
+    # Satisfaction score
     rest["satisfaction_score"] = (
         0.5 * (rest["avg_rating"] / 5.0)
         + 0.3 * (rest["positive_pct"] / 100.0)
         + 0.2 * (rest["avg_popularity"].fillna(0) / 100.0)
     )
 
-    rest["weighted_reviews"] = rest["review_count"] * (rest["avg_rating"] / 5.0)
+    # Seating score (0–100)
+    rest["seating_score"] = (
+        rest["seating_signal"].clip(-3, 3) + 3
+    ) / 6 * 100
 
-    # Competitor map per restaurant (same city & cuisine)
-    comp_map = {}
+    # Wait time + recommendation
+    rest["estimated_wait_time"] = rest.index.map(
+        lambda n: estimate_wait_time(df, n)
+    )
+
+    rest["seating_recommendation"] = rest.apply(
+        lambda r: seating_recommendation(
+            r["seating_score"],
+            r["estimated_wait_time"]
+        ),
+        axis=1
+    )
+
+    # Competitors (same city + cuisine)
+    competitors = {}
     for name, row in rest.iterrows():
         mask = (
             (rest["city"] == row["city"])
             & (rest["cuisine"] == row["cuisine"])
             & (rest.index != name)
         )
-        comp_df = rest[mask].sort_values("satisfaction_score", ascending=False)
-        comp_map[name] = comp_df
+        competitors[name] = rest[mask]
 
-    metrics: Dict[str, Any] = {
+    return {
         "df": df,
         "restaurants": rest,
         "sentiment": sentiment_stats,
-        "competitors": comp_map,
+        "competitors": competitors,
     }
-    return metrics
 
 
+# ==================================================
+# VIEWS (USED BY app.py)
+# ==================================================
 def get_overview(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
     rest = metrics["restaurants"].loc[name]
     sent = metrics["sentiment"].loc[name]
     df = metrics["df"]
     sub = df[df["name"] == name]
 
-    # Rating vs competitors
     comp = metrics["competitors"].get(name, pd.DataFrame())
+
     chart_df = pd.concat(
         [
-            pd.DataFrame(
-                {
-                    "name": [name],
-                    "avg_rating": [rest["avg_rating"]],
-                    "satisfaction_score": [rest["satisfaction_score"]],
-                    "type": ["selected"],
-                }
-            ),
-            pd.DataFrame(
-                {
-                    "name": comp.index,
-                    "avg_rating": comp["avg_rating"],
-                    "satisfaction_score": comp["satisfaction_score"],
-                    "type": "competitor",
-                }
-            ),
+            pd.DataFrame({
+                "name": [name],
+                "avg_rating": [rest["avg_rating"]],
+                "type": ["selected"]
+            }),
+            pd.DataFrame({
+                "name": comp.index,
+                "avg_rating": comp["avg_rating"],
+                "type": "competitor"
+            })
         ],
-        ignore_index=True,
+        ignore_index=True
     )
 
     rating_chart = px.bar(
@@ -216,23 +213,23 @@ def get_overview(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
         x="name",
         y="avg_rating",
         color="type",
-        title="Average rating vs competitors",
+        title="Average Rating vs Competitors"
     )
 
     trend_chart = None
     if sub["review_date"].notna().any():
         tmp = sub.dropna(subset=["review_date"]).copy()
         tmp["month"] = tmp["review_date"].dt.to_period("M").dt.to_timestamp()
-        by_month = tmp.groupby("month").agg(
+        trend = tmp.groupby("month").agg(
             avg_rating=("rating", "mean"),
-            avg_compound=("compound", "mean"),
-        )
-        by_month = by_month.reset_index()
+            avg_compound=("compound", "mean")
+        ).reset_index()
+
         trend_chart = px.line(
-            by_month,
+            trend,
             x="month",
             y=["avg_rating", "avg_compound"],
-            title="Rating & sentiment over time",
+            title="Rating & Sentiment Trend"
         )
 
     return {
@@ -251,67 +248,33 @@ def get_competitor_view(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
     comp = metrics["competitors"].get(name, pd.DataFrame())
 
     if comp.empty:
-        bar_chart = px.bar(
+        bar = px.bar(
             x=[name],
             y=[rest["satisfaction_score"]],
-            labels={"x": "Restaurant", "y": "Satisfaction score"},
-            title="No direct competitors found; showing only selected restaurant.",
+            title="No competitors found"
         )
-        return {"bar_chart": bar_chart, "map": None}
+        return {"bar_chart": bar, "map": None}
 
-    bar_df = comp.copy()
-    bar_df = bar_df.reset_index()
-    bar_df["type"] = "competitor"
+    df_bar = comp.reset_index()[["name", "satisfaction_score"]]
+    df_bar["type"] = "competitor"
 
-    sel_row = pd.DataFrame(
-        {
-            "name": [name],
-            "satisfaction_score": [rest["satisfaction_score"]],
-            "type": ["selected"],
-        }
-    )
+    selected = pd.DataFrame({
+        "name": [name],
+        "satisfaction_score": [rest["satisfaction_score"]],
+        "type": ["selected"]
+    })
 
-    bar_plot_df = pd.concat(
-        [sel_row, bar_df[["name", "satisfaction_score", "type"]]], ignore_index=True
-    )
+    plot_df = pd.concat([selected, df_bar], ignore_index=True)
 
     bar_chart = px.bar(
-        bar_plot_df,
+        plot_df,
         x="name",
         y="satisfaction_score",
         color="type",
-        title="Satisfaction score vs competitors",
+        title="Satisfaction Score vs Competitors"
     )
 
-    # Optional heatmap if lat/lon available
-    df = metrics["df"]
-    cols = set(df.columns)
-    deck_obj = None
-    if {"lat", "lon", "compound"}.issubset(cols):
-        subset_names = bar_plot_df["name"].tolist()
-        coord_df = df[df["name"].isin(subset_names)].dropna(subset=["lat", "lon"])
-        if not coord_df.empty:
-            layer = pdk.Layer(
-                "HeatmapLayer",
-                data=coord_df,
-                get_position="[lon, lat]",
-                aggregation="MEAN",
-                get_weight="compound",
-                radiusPixels=40,
-            )
-            view_state = pdk.ViewState(
-                latitude=float(coord_df["lat"].mean()),
-                longitude=float(coord_df["lon"].mean()),
-                zoom=11,
-                pitch=40,
-            )
-            deck_obj = pdk.Deck(
-                layers=[layer],
-                initial_view_state=view_state,
-                tooltip={"text": "{name}\nSentiment: {compound}"},
-            )
-
-    return {"bar_chart": bar_chart, "map": deck_obj}
+    return {"bar_chart": bar_chart, "map": None}
 
 
 def get_sentiment_view(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -324,162 +287,74 @@ def get_sentiment_view(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
         "neutral": int(sent.get("neutral", 0)),
         "negative": int(sent.get("negative", 0)),
     }
-    avg_compound = float(sent["avg_compound"])
 
-    stack_df = pd.DataFrame(
-        {
-            "sentiment": ["positive", "neutral", "negative"],
-            "count": [counts["positive"], counts["neutral"], counts["negative"]],
-        }
-    )
+    chart_df = pd.DataFrame({
+        "sentiment": list(counts.keys()),
+        "count": list(counts.values())
+    })
+
     chart = px.bar(
-        stack_df,
+        chart_df,
         x="sentiment",
         y="count",
-        title="Sentiment distribution",
-        text_auto=True,
+        title="Sentiment Distribution"
     )
-
-    samples = sub[
-        ["review_date", "rating", "compound", "sentiment_bin", "review_text"]
-    ].copy()
-    samples = samples.sort_values("compound", ascending=False).head(50)
 
     return {
         "counts": counts,
-        "avg_compound": avg_compound,
+        "avg_compound": float(sent["avg_compound"]),
         "chart": chart,
-        "samples": samples,
+        "samples": sub.sort_values("compound").head(20),
     }
 
 
 def get_delivery_view(name: str, metrics: Dict[str, Any]):
     df = metrics["df"]
-    rest = metrics["restaurants"].loc[name]
-    sub = df[df["name"] == name].copy()
+    sub = df[df["name"] == name]
 
     if "delivery_time" not in df.columns or sub["delivery_time"].isna().all():
-        return px.bar(
-            x=[name],
-            y=[0],
-            labels={"x": "Restaurant", "y": "Delivery time (min)"},
-            title="No delivery time data available.",
-        )
+        return px.bar(x=[name], y=[0], title="No delivery data")
 
-    # Compare with competitors
-    comp = metrics["competitors"].get(name, pd.DataFrame())
-    comp_names = comp.index.tolist()
-
-    plot_df = pd.concat(
-        [
-            sub.assign(type="selected"),
-            df[df["name"].isin(comp_names)].assign(type="competitor"),
-        ],
-        ignore_index=True,
-    )
-
-    chart = px.box(
-        plot_df,
-        x="name",
-        y="delivery_time",
-        color="type",
-        title="Delivery time distribution (selected vs competitors)",
-    )
-    return chart
+    return px.box(sub, y="delivery_time", title="Delivery Time Distribution")
 
 
 def get_price_view(name: str, metrics: Dict[str, Any]):
     rest = metrics["restaurants"].loc[name]
-    city = rest["city"]
-    cuisine = rest["cuisine"]
-    rest_price = rest["price_range"]
+    df = metrics["restaurants"]
 
-    all_rest = metrics["restaurants"]
-    mask = (all_rest["city"] == city) & (all_rest["cuisine"] == cuisine)
-    subset = all_rest[mask].copy()
-    subset["is_selected"] = subset.index == name
+    subset = df[
+        (df["city"] == rest["city"]) &
+        (df["cuisine"] == rest["cuisine"])
+    ]
 
-    chart = px.histogram(
+    return px.histogram(
         subset,
         x="price_range",
-        color="is_selected",
-        barmode="group",
-        title=f"Price range distribution in {city} ({cuisine})",
+        title="Price Range Distribution"
     )
-    return chart
 
 
 def get_menu_popularity_view(name: str, metrics: Dict[str, Any]):
     rest = metrics["restaurants"].loc[name]
     comp = metrics["competitors"].get(name, pd.DataFrame())
 
-    plot_df = pd.DataFrame(
-        {
+    plot_df = pd.concat([
+        pd.DataFrame({
             "name": [name],
-            "avg_popularity": [rest["avg_popularity"]],
-            "type": ["selected"],
-        }
-    )
+            "popularity": [rest["avg_popularity"]],
+            "type": ["selected"]
+        }),
+        pd.DataFrame({
+            "name": comp.index,
+            "popularity": comp["avg_popularity"],
+            "type": "competitor"
+        })
+    ], ignore_index=True)
 
-    if not comp.empty:
-        tmp = comp.copy().reset_index()
-        tmp = tmp.rename(columns={"index": "name"})
-        tmp["type"] = "competitor"
-        tmp = tmp[["name", "avg_popularity", "type"]]
-        plot_df = pd.concat([plot_df, tmp], ignore_index=True)
-
-    chart = px.bar(
+    return px.bar(
         plot_df,
         x="name",
-        y="avg_popularity",
+        y="popularity",
         color="type",
-        title="Average menu item popularity (0–100)",
+        title="Menu Item Popularity"
     )
-    return chart
-
-import math
-
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dlat/2)**2 
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(dlon/2)**2
-    )
-    return 2 * R * math.asin(math.sqrt(a))
-
-
-def get_nearby_restaurants(df, restaurant_name, city_name, radius_km=10):
-    df = df.copy()
-
-    df["restaurant_name"] = df["restaurant_name"].str.lower()
-    df["city"] = df["city"].str.lower()
-
-    restaurant_name = restaurant_name.lower()
-    city_name = city_name.lower()
-
-    base = df[
-        (df["restaurant_name"] == restaurant_name) &
-        (df["city"] == city_name)
-    ]
-
-    if base.empty:
-        return None, None
-
-    base_lat = base.iloc[0]["lat"]
-    base_lon = base.iloc[0]["lon"]
-
-    df["distance_km"] = df.apply(
-        lambda row: haversine(base_lat, base_lon, row["lat"], row["lon"]),
-        axis=1
-    )
-
-    nearby = df[df["distance_km"] <= radius_km]
-
-    return base, nearby
-
-
-
