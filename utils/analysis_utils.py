@@ -7,6 +7,58 @@ import plotly.express as px
 import pydeck as pdk
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+SEATING_KEYWORDS = {
+    "positive": [
+        "spacious", "comfortable seating", "ample seating",
+        "nice ambience", "family seating", "comfortable chairs",
+        "airy", "peaceful", "good seating"
+    ],
+    "negative": [
+        "crowded", "no seating", "small space", "cramped",
+        "long wait", "waiting time", "queue", "standing",
+        "packed", "no place to sit"
+    ]
+}
+def extract_seating_signal(review: str) -> int:
+    review = review.lower()
+    score = 0
+
+    for kw in SEATING_KEYWORDS["positive"]:
+        if kw in review:
+            score += 1
+
+    for kw in SEATING_KEYWORDS["negative"]:
+        if kw in review:
+            score -= 1
+
+    return score
+def estimate_wait_time(df, restaurant_name):
+    sub = df[df["name"] == restaurant_name]
+
+    wait_mentions = sub["review_text"].str.lower().str.contains(
+        "wait|queue|standing|crowded", regex=True
+    ).sum()
+
+    return min(60, 5 + wait_mentions * 3)
+def seating_recommendation(seating_score, wait_time):
+    if seating_score >= 80 and wait_time <= 10:
+        return "Ideal for families and groups"
+    elif seating_score >= 60:
+        return "Good seating, moderate waiting expected"
+    elif wait_time > 30:
+        return "Better for takeaway or off-peak hours"
+    else:
+        return "Suitable for quick visits"
+df["seating_signal"] = df["review_text"].astype(str).apply(extract_seating_signal)
+
+restaurant_metrics["seating_score"] = seating_satisfaction_score(df, name)
+restaurant_metrics["estimated_wait_time"] = estimate_wait_time(df, name)
+restaurant_metrics["seating_recommendation"] = seating_recommendation(
+    restaurant_metrics["seating_score"],
+    restaurant_metrics["estimated_wait_time"]
+)
+
+
 
 def _compute_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     ana = SentimentIntensityAnalyzer()
@@ -382,4 +434,6 @@ def get_nearby_restaurants(df, restaurant_name, city_name, radius_km=10):
     nearby = df[df["distance_km"] <= radius_km]
 
     return base, nearby
+
+
 
