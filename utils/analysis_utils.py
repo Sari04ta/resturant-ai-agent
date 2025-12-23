@@ -57,6 +57,18 @@ restaurant_metrics["seating_recommendation"] = seating_recommendation(
     restaurant_metrics["seating_score"],
     restaurant_metrics["estimated_wait_time"]
 )
+def competitor_seating_comparison(metrics, selected_name):
+    base = metrics["restaurants"].loc[selected_name]
+    cuisine = base["cuisine"]
+
+    competitors = metrics["restaurants"]
+    competitors = competitors[competitors["cuisine"] == cuisine]
+
+    return competitors.sort_values(
+        by=["seating_score", "estimated_wait_time"],
+        ascending=[False, True]
+    )
+
 
 
 
