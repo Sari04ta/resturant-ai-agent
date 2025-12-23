@@ -232,6 +232,7 @@ def get_overview(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
             title="Rating & Sentiment Trend"
         )
 
+    # ADD SEATING FIELDS HERE
     return {
         "avg_rating": float(rest["avg_rating"]),
         "review_count": int(rest["review_count"]),
@@ -240,7 +241,13 @@ def get_overview(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
         "zone": rest["zone"],
         "rating_chart": rating_chart,
         "trend_chart": trend_chart,
+
+        # 👇 REQUIRED FOR Seating Satisfaction tab
+        "seating_score": int(rest["seating_score"]),
+        "estimated_wait_time": int(rest["estimated_wait_time"]),
+        "seating_recommendation": rest["seating_recommendation"],
     }
+
 
 
 def get_competitor_view(name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
